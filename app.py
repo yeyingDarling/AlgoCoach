@@ -10,14 +10,45 @@ from supabase import create_client
 st.set_page_config(page_title="专属算法教练", page_icon="🤖", layout="wide")
 
 # ==========================================
-# 1. 云数据库连接与超强防崩溃保护
+# 1. 云数据库连接与防崩溃保护 (已替换为你的最新配置)
 # ==========================================
-SUPABASE_URL = "https://hcfoywkwikmdpvjvudxf.supabase.co"      
-SUPABASE_KEY = "sb_publishable_aOmd47HCxEQoFbSP8mNvjQ_Q8YhAW12"
+SUPABASE_URL = "https://aanceiutinmmuoqljnnz.supabase.co"      
+SUPABASE_KEY = "sb_publishable_dqWv2rJdvhaf8hsr5_ZnXA_OSxmXq8C"
 
 if "supabase" not in st.session_state:
     st.session_state.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase = st.session_state.supabase
+
+# --- 会话管理相关函数 ---
+def get_session_title(username, session_id):
+    try:
+        res = supabase.table("chat_sessions").select("custom_title").eq("session_id", session_id).execute()
+        if res.data and res.data[0]["custom_title"]:
+            return res.data[0]["custom_title"]
+    except: pass
+    
+    try:
+        res = supabase.table("chat_history").select("content").eq("session_id", session_id).eq("role", "user").limit(1).execute()
+        if res.data:
+            c = res.data[0]["content"]
+            return c[:12] + "..." if len(c) > 12 else c
+    except: pass
+    return "新对话"
+
+def save_session_title(username, session_id, title):
+    try:
+        res = supabase.table("chat_sessions").select("*").eq("session_id", session_id).execute()
+        if not res.data:
+            supabase.table("chat_sessions").insert({"session_id": session_id, "username": username, "custom_title": title}).execute()
+        else:
+            supabase.table("chat_sessions").update({"custom_title": title}).eq("session_id", session_id).execute()
+    except: pass
+
+def delete_session(username, session_id):
+    try:
+        supabase.table("chat_history").delete().eq("session_id", session_id).execute()
+        supabase.table("chat_sessions").delete().eq("session_id", session_id).execute()
+    except: pass
 
 def get_all_sessions(username):
     try:
@@ -26,12 +57,12 @@ def get_all_sessions(username):
         for row in res.data:
             s_id = row["session_id"]
             if s_id not in sessions_dict:
-                title = row["content"][:12] + "..." if len(row["content"]) > 12 else row["content"]
-                sessions_dict[s_id] = title
+                sessions_dict[s_id] = get_session_title(username, s_id) 
         return list(sessions_dict.items())
     except Exception:
         return []
 
+# --- 聊天记录读写函数 ---
 def load_messages(username, session_id):
     retries = 3
     for i in range(retries):
@@ -53,12 +84,9 @@ def save_message(username, session_id, role, content):
             time.sleep(1)
 
 def clean_temp_files(username):
-    """清理服务器上该用户的旧临时代码文件"""
     for f in glob.glob(f"temp_{username}.*"):
-        try:
-            os.remove(f)
-        except:
-            pass
+        try: os.remove(f)
+        except: pass
 
 # ==========================================
 # 2. 用户身份与 Key
@@ -71,7 +99,7 @@ username = st.sidebar.text_input("输入你的昵称", value=st.session_state.sa
 st.session_state.saved_username = username 
 
 if username:
-    st.sidebar.info("💡 请牢记昵称！只要昵称相同，就能找回你的所有历史对话。")
+    st.sidebar.info("💡 请牢记昵称！")
 
 st.sidebar.markdown("### 🔑 API 配置")
 if "saved_api_key" not in st.session_state:
@@ -85,7 +113,7 @@ if not username or not user_api_key:
     st.stop()
 
 # ==========================================
-# 3. 多会话管理与功能控制
+# 3. 多会话管理与界面控制
 # ==========================================
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📂 我的对话")
@@ -95,7 +123,7 @@ if "session_id" not in st.session_state:
 
 if st.sidebar.button("➕ 开启新对话", use_container_width=True):
     st.session_state.session_id = str(uuid.uuid4())[:8]
-    clean_temp_files(username) # 新建对话时清理旧代码
+    clean_temp_files(username)
     st.rerun()
 
 sessions = get_all_sessions(username)
@@ -103,14 +131,32 @@ if not sessions:
     st.sidebar.caption("暂无历史对话")
 else:
     for s_id, s_title in sessions:
+        col1, col2, col3 = st.sidebar.columns([5, 1, 1])
         prefix = "▶ " if s_id == st.session_state.session_id else "💬 "
-        if st.sidebar.button(f"{prefix}{s_title}", key=s_id, use_container_width=True):
+        
+        if col1.button(f"{prefix}{s_title}", key=f"btn_{s_id}", use_container_width=True):
             st.session_state.session_id = s_id
             st.rerun()
+        
+        if col2.button("✏️", key=f"edit_{s_id}"):
+            st.session_state.editing_session = s_id
+        
+        if col3.button("🗑️", key=f"del_{s_id}"):
+            delete_session(username, s_id)
+            if st.session_state.session_id == s_id:
+                st.session_state.session_id = str(uuid.uuid4())[:8]
+            st.rerun()
+
+if "editing_session" in st.session_state and st.session_state.editing_session:
+    new_title = st.sidebar.text_input("输入新名字：", value="", key="new_title_input")
+    if st.sidebar.button("保存名字", type="primary"):
+        save_session_title(username, st.session_state.editing_session, new_title)
+        st.session_state.editing_session = None 
+        st.rerun()
 
 st.sidebar.markdown("---")
 
-# 🎭 人设切换
+# 人设切换
 persona = st.sidebar.selectbox("🎭 教练人设：", [
     "严谨导师", "温柔学姐", "大厂面试官", "暴躁老哥"
 ])
@@ -153,18 +199,17 @@ st.markdown("""
 st.title("🤖 SYSTEM // 算法教练")
 st.caption(f"用户: {username} | 人设: {persona} | 语言: {lang_choice}")
 
-# 上传代码 & 粘贴报错
 col1, col2 = st.columns(2)
 with col1:
     st.markdown(f"**📁 上传 {lang_choice} 代码**")
     uploaded_code_file = st.file_uploader("上传代码文件", type=["cpp", "c", "py", "java", "txt", "cc"], label_visibility="collapsed")
 with col2:
     st.markdown("**🐛 OJ 报错日志 (可选)**")
-    oj_error_log = st.text_area("粘贴洛谷/CF的报错", placeholder="例如：Compilation Error... 或者 Wrong Answer on test 3...", label_visibility="collapsed", height=100)
+    oj_error_log = st.text_area("粘贴洛谷/CF的报错", placeholder="例如：Compilation Error...", label_visibility="collapsed", height=100)
 
 current_file_path = ""
 if uploaded_code_file is not None:
-    clean_temp_files(username) # 每次上传新文件前，清理旧文件
+    clean_temp_files(username)
     ext = uploaded_code_file.name.split(".")[-1]
     if ext == "java":
         current_file_path = os.path.join(os.getcwd(), f"temp_{username}.java")
@@ -177,7 +222,6 @@ if uploaded_code_file is not None:
 
 client = OpenAI(api_key=user_api_key, base_url="https://api.deepseek.com")
 
-# 加载记忆
 if "messages" not in st.session_state or st.session_state.get("current_session_id") != st.session_state.session_id:
     st.session_state.messages = load_messages(username, st.session_state.session_id)
     st.session_state.current_session_id = st.session_state.session_id
@@ -187,18 +231,12 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # ==========================================
-# 5. 聊天与 Agent 执行逻辑
+# 5. 聊天逻辑
 # ==========================================
 if prompt := st.chat_input("输入代码或指令..."):
-    
-    # 组合最终发给 AI 的 Prompt
     final_prompt = prompt
-    
-    # 如果贴了报错日志
     if oj_error_log:
         final_prompt = f"【OJ 报错日志如下】\n{oj_error_log}\n\n【我的问题】\n{prompt}"
-        
-    # 如果传了代码，自动引导 AI 去读
     if current_file_path:
         final_prompt += f"\n\n(提示：请读取并分析当前路径下的 `{os.path.basename(current_file_path)}` 文件)"
 
@@ -213,9 +251,7 @@ if prompt := st.chat_input("输入代码或指令..."):
 
     with st.chat_message("assistant"):
         if mode == "📖 启发式教学":
-            # 融入人设
             sys_prompt = f"{persona_prompt} 你是{lang_choice}教练。只讲思路，不要直接给完整代码。" if ui_lang=="中文" else f"You are a {lang_choice} coach. Only give hints."
-            
             if current_file_path:
                  with open(current_file_path, "r", encoding="utf-8") as f:
                      code_content = f.read()
@@ -237,8 +273,6 @@ if prompt := st.chat_input("输入代码或指令..."):
         else:
             agent_mode = "review" if mode == "🔍 静态代码审计" else ("stress" if mode == "⚔️ 极限压力测试 (对拍)" else "debug")
             file_target = os.path.basename(current_file_path) if current_file_path else "sol.cpp"
-            
-            # 把报错日志拼接到发给 Agent 的 Prompt 中
             agent_prompt = f"{persona_prompt}\n\n{final_prompt}"
             
             with st.spinner(f"Agent 正在执行 [{mode}] 任务，请稍候..."):
