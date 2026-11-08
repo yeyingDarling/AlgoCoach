@@ -88,7 +88,7 @@ def clean_temp_files(username):
         except: pass
 
 # ==========================================
-# 2. 用户身份与 Key
+# 2. 用户身份与 Key (加入强力防呆校验)
 # ==========================================
 st.sidebar.markdown("### 👤 用户身份")
 if "saved_username" not in st.session_state:
@@ -107,8 +107,17 @@ if "saved_api_key" not in st.session_state:
 user_api_key = st.sidebar.text_input("填入你的 DeepSeek API Key", type="password", value=st.session_state.saved_api_key)
 st.session_state.saved_api_key = user_api_key
 
-if not username or not user_api_key:
-    st.warning("⚠️ 请先在左侧配置昵称和你的专属 API Key 才能使用。")
+# 【新增】防呆校验逻辑
+if not username:
+    st.warning("⚠️ 请输入你的昵称才能使用。")
+    st.stop()
+
+if not user_api_key:
+    st.warning("⚠️ 请填入你的专属 DeepSeek API Key 才能使用。")
+    st.stop()
+
+if not user_api_key.startswith("sk-"):
+    st.error("❌ API Key 格式错误！必须是以 `sk-` 开头的密钥。请检查是否复制完整。")
     st.stop()
 
 # ==========================================
@@ -230,7 +239,7 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # ==========================================
-# 5. 聊天逻辑
+# 5. 聊天逻辑 (加入异常拦截)
 # ==========================================
 if prompt := st.chat_input("输入代码或指令..."):
     final_prompt = prompt
@@ -256,27 +265,37 @@ if prompt := st.chat_input("输入代码或指令..."):
                      code_content = f.read()
                  final_prompt = f"这是我的代码：\n```{lang_choice}\n{code_content}\n```\n\n{final_prompt}"
             
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "system", "content": sys_prompt}] + context_messages[:-1] + [{"role": "user", "content": final_prompt}],
-                temperature=0, stream=True,
-            )
-            full_response = ""
-            placeholder = st.empty()
-            for chunk in response:
-                if chunk.choices[0].delta.content:
-                    full_response += chunk.choices[0].delta.content
-                    placeholder.markdown(full_response + "▌")
-            placeholder.markdown(full_response)
+            try:
+                # 【新增】try 拦截报错
+                response = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "system", "content": sys_prompt}] + context_messages[:-1] + [{"role": "user", "content": final_prompt}],
+                    temperature=0, stream=True,
+                )
+                full_response = ""
+                placeholder = st.empty()
+                for chunk in response:
+                    if chunk.choices[0].delta.content:
+                        full_response += chunk.choices[0].delta.content
+                        placeholder.markdown(full_response + "▌")
+                placeholder.markdown(full_response)
+            except Exception as e:
+                st.error(f"🚨 调用大模型失败！请检查你的 API Key 是否正确，或者账户里是否有余额。(错误信息: {e})")
+                full_response = "（调用失败，未回复）"
             
         else:
             agent_mode = "review" if mode == "🔍 静态代码审计" else ("stress" if mode == "⚔️ 极限压力测试 (对拍)" else "debug")
             file_target = os.path.basename(current_file_path) if current_file_path else "sol.cpp"
             agent_prompt = f"{persona_prompt}\n\n{final_prompt}"
             
-            with st.spinner(f"Agent 正在执行 [{mode}] 任务，请稍候..."):
-                full_response = run_agent(agent_prompt, api_key=user_api_key, mode=agent_mode, lang=lang_choice, file_path=file_target, ui_lang=ui_lang)
-                st.markdown(full_response)
+            try:
+                with st.spinner(f"Agent 正在执行 [{mode}] 任务，请稍候..."):
+                    # 【新增】try 拦截报错
+                    full_response = run_agent(agent_prompt, api_key=user_api_key, mode=agent_mode, lang=lang_choice, file_path=file_target, ui_lang=ui_lang)
+                    st.markdown(full_response)
+            except Exception as e:
+                st.error(f"🚨 Agent 执行失败！请检查 API Key 是否正确，或者网络是否畅通。(错误信息: {e})")
+                full_response = "（Agent 调用失败，未回复）"
 
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     save_message(username, st.session_state.session_id, "assistant", full_response)
