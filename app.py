@@ -10,7 +10,7 @@ from supabase import create_client
 st.set_page_config(page_title="专属算法教练", page_icon="🤖", layout="wide")
 
 # ==========================================
-# 1. 云数据库连接与防崩溃保护 (已替换为你的最新配置)
+# 1. 云数据库连接与防崩溃保护
 # ==========================================
 SUPABASE_URL = "https://aanceiutinmmuoqljnnz.supabase.co"      
 SUPABASE_KEY = "sb_publishable_dqWv2rJdvhaf8hsr5_ZnXA_OSxmXq8C"
@@ -19,7 +19,6 @@ if "supabase" not in st.session_state:
     st.session_state.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase = st.session_state.supabase
 
-# --- 会话管理相关函数 ---
 def get_session_title(username, session_id):
     try:
         res = supabase.table("chat_sessions").select("custom_title").eq("session_id", session_id).execute()
@@ -62,7 +61,6 @@ def get_all_sessions(username):
     except Exception:
         return []
 
-# --- 聊天记录读写函数 ---
 def load_messages(username, session_id):
     retries = 3
     for i in range(retries):
@@ -98,8 +96,9 @@ if "saved_username" not in st.session_state:
 username = st.sidebar.text_input("输入你的昵称", value=st.session_state.saved_username)
 st.session_state.saved_username = username 
 
+# 【修复】把你要的完整提示语加回来了！
 if username:
-    st.sidebar.info("💡 请牢记昵称！")
+    st.sidebar.info("💡 请牢记你的昵称！只要使用相同的昵称，就能保留之前的聊天记忆。")
 
 st.sidebar.markdown("### 🔑 API 配置")
 if "saved_api_key" not in st.session_state:
@@ -156,7 +155,6 @@ if "editing_session" in st.session_state and st.session_state.editing_session:
 
 st.sidebar.markdown("---")
 
-# 人设切换
 persona = st.sidebar.selectbox("🎭 教练人设：", [
     "严谨导师", "温柔学姐", "大厂面试官", "暴躁老哥"
 ])
