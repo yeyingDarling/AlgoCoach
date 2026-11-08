@@ -19,6 +19,7 @@ if "supabase" not in st.session_state:
     st.session_state.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase = st.session_state.supabase
 
+# --- 会话管理相关函数 ---
 def get_session_title(username, session_id):
     try:
         res = supabase.table("chat_sessions").select("custom_title").eq("session_id", session_id).execute()
@@ -96,7 +97,6 @@ if "saved_username" not in st.session_state:
 username = st.sidebar.text_input("输入你的昵称", value=st.session_state.saved_username)
 st.session_state.saved_username = username 
 
-# 【修复】把你要的完整提示语加回来了！
 if username:
     st.sidebar.info("💡 请牢记你的昵称！只要使用相同的昵称，就能保留之前的聊天记忆。")
 
@@ -130,21 +130,22 @@ if not sessions:
     st.sidebar.caption("暂无历史对话")
 else:
     for s_id, s_title in sessions:
-        col1, col2, col3 = st.sidebar.columns([5, 1, 1])
+        col1, col2 = st.sidebar.columns([5, 1])
         prefix = "▶ " if s_id == st.session_state.session_id else "💬 "
         
         if col1.button(f"{prefix}{s_title}", key=f"btn_{s_id}", use_container_width=True):
             st.session_state.session_id = s_id
             st.rerun()
-        
-        if col2.button("✏️", key=f"edit_{s_id}"):
-            st.session_state.editing_session = s_id
-        
-        if col3.button("🗑️", key=f"del_{s_id}"):
-            delete_session(username, s_id)
-            if st.session_state.session_id == s_id:
-                st.session_state.session_id = str(uuid.uuid4())[:8]
-            st.rerun()
+            
+        with col2.popover("⋮"):
+            if st.button("✏️ 重命名", key=f"edit_{s_id}", use_container_width=True):
+                st.session_state.editing_session = s_id
+                st.rerun()
+            if st.button("🗑️ 删除", key=f"del_{s_id}", use_container_width=True):
+                delete_session(username, s_id)
+                if st.session_state.session_id == s_id:
+                    st.session_state.session_id = str(uuid.uuid4())[:8]
+                st.rerun()
 
 if "editing_session" in st.session_state and st.session_state.editing_session:
     new_title = st.sidebar.text_input("输入新名字：", value="", key="new_title_input")
