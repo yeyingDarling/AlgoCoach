@@ -88,7 +88,7 @@ def clean_temp_files(username):
         except: pass
 
 # ==========================================
-# 2. 用户身份与 Key (加入强力防呆校验)
+# 2. 用户身份与 Key (防呆校验)
 # ==========================================
 st.sidebar.markdown("### 👤 用户身份")
 if "saved_username" not in st.session_state:
@@ -107,7 +107,6 @@ if "saved_api_key" not in st.session_state:
 user_api_key = st.sidebar.text_input("填入你的 DeepSeek API Key", type="password", value=st.session_state.saved_api_key)
 st.session_state.saved_api_key = user_api_key
 
-# 【新增】防呆校验逻辑
 if not username:
     st.warning("⚠️ 请输入你的昵称才能使用。")
     st.stop()
@@ -239,7 +238,7 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # ==========================================
-# 5. 聊天逻辑 (加入异常拦截)
+# 5. 聊天逻辑
 # ==========================================
 if prompt := st.chat_input("输入代码或指令..."):
     final_prompt = prompt
@@ -266,7 +265,6 @@ if prompt := st.chat_input("输入代码或指令..."):
                  final_prompt = f"这是我的代码：\n```{lang_choice}\n{code_content}\n```\n\n{final_prompt}"
             
             try:
-                # 【新增】try 拦截报错
                 response = client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[{"role": "system", "content": sys_prompt}] + context_messages[:-1] + [{"role": "user", "content": final_prompt}],
@@ -280,8 +278,8 @@ if prompt := st.chat_input("输入代码或指令..."):
                         placeholder.markdown(full_response + "▌")
                 placeholder.markdown(full_response)
             except Exception as e:
-                st.error(f"🚨 调用大模型失败！请检查你的 API Key 是否正确，或者账户里是否有余额。(错误信息: {e})")
-                full_response = "（调用失败，未回复）"
+                st.error(f"🚨 调用大模型失败！请检查 API Key 是否正确或余额。({e})")
+                full_response = "（调用失败）"
             
         else:
             agent_mode = "review" if mode == "🔍 静态代码审计" else ("stress" if mode == "⚔️ 极限压力测试 (对拍)" else "debug")
@@ -290,12 +288,26 @@ if prompt := st.chat_input("输入代码或指令..."):
             
             try:
                 with st.spinner(f"Agent 正在执行 [{mode}] 任务，请稍候..."):
-                    # 【新增】try 拦截报错
                     full_response = run_agent(agent_prompt, api_key=user_api_key, mode=agent_mode, lang=lang_choice, file_path=file_target, ui_lang=ui_lang)
                     st.markdown(full_response)
             except Exception as e:
-                st.error(f"🚨 Agent 执行失败！请检查 API Key 是否正确，或者网络是否畅通。(错误信息: {e})")
-                full_response = "（Agent 调用失败，未回复）"
+                st.error(f"🚨 Agent 执行失败！({e})")
+                full_response = "（Agent 调用失败）"
+
+            # 【新增】如果处于调试模式且文件存在，提供下载按钮
+            if mode == "🛠️ 智能调试与重构" and current_file_path:
+                try:
+                    with open(current_file_path, "r", encoding="utf-8") as f:
+                        modified_code = f.read()
+                    st.download_button(
+                        label="📥 下载 AI 修改后的完整代码",
+                        data=modified_code,
+                        file_name=os.path.basename(current_file_path),
+                        mime="text/plain",
+                        key=f"dl_{uuid.uuid4()}"  # 防止key冲突
+                    )
+                except Exception:
+                    pass
 
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     save_message(username, st.session_state.session_id, "assistant", full_response)
